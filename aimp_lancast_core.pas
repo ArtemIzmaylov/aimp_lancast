@@ -113,7 +113,7 @@ begin
   FBASSReady := True;
   FAppWndHandle := AAppWndHandle;
   FLibHandle := GetModuleHandle('bass_wma.dll');
-  if FLibHandle = 0 then
+  if FLibHandle <= HINSTANCE_ERROR then
     FLibHandle := acLoadLibrary('bass_wma.dll');
   @FBASSEncodeClose := acGetProcAddress(FLibHandle, 'BASS_WMA_EncodeClose', FBASSReady);
   @FBASSEncodeOpenNetwork := acGetProcAddress(FLibHandle, 'BASS_WMA_EncodeOpenNetwork', FBASSReady);
