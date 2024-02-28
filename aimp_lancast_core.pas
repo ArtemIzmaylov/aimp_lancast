@@ -11,7 +11,7 @@ uses
   System.Variants,
   // ACL
   ACL.Classes.StringList,
-  ACL.Classes.Timer,
+  ACL.Timers,
   ACL.UI.Controls.BaseControls,
   ACL.UI.Controls.Buttons,
   ACL.UI.Controls.Labels,
@@ -24,7 +24,7 @@ uses
   Vcl.Forms,
   Vcl.Dialogs;
 
-{$REGION 'BASS API'}
+{$REGION ' BASS API '}
 const
   BASS_WMA_ENCODE_SCRIPT = $20000; // set script (mid-stream tags) in the WMA encoding
   BASS_WMA_TAG_UNICODE   = 1;
@@ -32,6 +32,7 @@ const
 type
   HWMENCODE = DWORD;		// WMA encoding handle
   CLIENTCONNECTPROC = procedure(handle: HWMENCODE; connect: BOOL; ip: PAnsiChar; user: Pointer); stdcall;
+  TBASSErrorGetCode = function: LongInt; stdcall;
   TBASS_WMA_EncodeClose = function(handle:HWMENCODE): BOOL; stdcall;
   TBASS_WMA_EncodeGetPort = function(handle:HWMENCODE): DWORD; stdcall;
   TBASS_WMA_EncodeOpenNetwork = function (freq, chans, flags, bitrate, port, clients: DWORD): HWMENCODE; stdcall;
@@ -58,21 +59,21 @@ type
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
     procedure tmUpdateStateTimer(Sender: TObject);
   strict private
-  {$REGION 'BASSWMA'}
+  {$REGION ' BASSWMA '}
     FBASSEncodeClose: TBASS_WMA_EncodeClose;
     FBASSEncodeGetPort: TBASS_WMA_EncodeGetPort;
     FBASSEncodeOpenNetwork: TBASS_WMA_EncodeOpenNetwork;
     FBASSEncodeSetNotify: TBASS_WMA_EncodeSetNotify;
     FBASSEncodeSetTag: TBASS_WMA_EncodeSetTag;
     FBASSEncodeWrite: TBASS_WMA_EncodeWrite;
+    FBASSGetErrorCode: TBASSErrorGetCode;
     FBASSReady: Boolean;
     FLibHandle: THandle;
     class procedure OnClientProc(handle: HWMENCODE; connect: BOOL; ip: PAnsiChar; user: Pointer); stdcall; static;
   {$ENDREGION}
   strict private type
-  {$REGION 'Internal Types'}
+  {$REGION ' Internal Types '}
     TCastState = (csStopped, csStarted, csEncoding, csError);
-
     TStreamInfo = record
       Bits: Integer;
       Freq: Integer;
@@ -84,6 +85,7 @@ type
     MaxClients = 50;
   strict private
     FAppWndHandle: THandle;
+    FCastErrorCode: Integer;
     FCastState: TCastState;
     FEncoder: HWMENCODE;
     FEncoderPort: Integer;
@@ -121,6 +123,7 @@ begin
   @FBASSEncodeSetNotify := acGetProcAddress(FLibHandle, 'BASS_WMA_EncodeSetNotify', FBASSReady);
   @FBASSEncodeSetTag := acGetProcAddress(FLibHandle, 'BASS_WMA_EncodeSetTag', FBASSReady);
   @FBASSEncodeWrite := acGetProcAddress(FLibHandle, 'BASS_WMA_EncodeWrite', FBASSReady);
+  @FBASSGetErrorCode := acGetProcAddress(GetModuleHandle('bass.dll'), 'BASS_ErrorGetCode', FBASSReady);
   UpdateState;
 end;
 
@@ -151,11 +154,15 @@ procedure TfrmLanCast.Start(Freq, Channels, Bits: Integer);
 begin
   if FBASSReady then
   begin
+    FCastErrorCode := 0;
     FStreamInfo.Bits := Bits;
     FStreamInfo.Freq := Freq;
     FStreamInfo.NumChannels := Channels;
     if Bits = 16 then
+    begin
       FEncoder := FBASSEncodeOpenNetwork(Freq, Channels, BASS_WMA_ENCODE_SCRIPT, Bitrate, 0, MaxClients);
+      FCastErrorCode := FBASSGetErrorCode();
+    end;
     if FEncoder <> 0 then
     begin
       FBASSEncodeSetNotify(FEncoder, OnClientProc, Self);
@@ -190,7 +197,7 @@ begin
   else if (FCastState = csError) and (FStreamInfo.Bits <> 16) then
     lbState.SetCaption('Error: only 16 bits depth is supported', vliError)
   else if (FCastState = csError) then
-    lbState.SetCaption('Error: failed to initialize the Encoder', vliError)
+    lbState.SetCaption('Error: failed to initialize the Encoder (' + IntToStr(FCastErrorCode) + ')', vliError)
   else if (FCastState = csStarted) then
     lbState.SetCaption('Waiting for data...', vliWarning)
   else if (FCastState = csEncoding) then
